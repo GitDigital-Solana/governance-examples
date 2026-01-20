@@ -1,0 +1,58 @@
+governance-examples/policies/iam-best-practices.yaml
+
+```yaml
+apiVersion: governance/v1.1.0
+kind: Policy
+metadata:
+  name: iam-best-practices
+  version: 1.2.0
+  description: "IAM best practices and security requirements"
+  severity: high
+  tags:
+    service: aws
+    resource: iam
+    category: security
+
+spec:
+  target:
+    resourceType: aws_iam_role
+    conditions:
+      - type: property
+        key: assume_role_policy_document
+        operator: exists
+  
+  rules:
+    - name: require-mfa
+      description: "IAM roles should require MFA"
+      condition: |
+        $.AssumeRolePolicyDocument.Statement.all(
+          @.Condition.Bool.'aws:MultiFactorAuthPresent' == 'true'
+        )
+      message: "IAM role does not require MFA"
+      severity: high
+    
+    - name: no-wildcard-actions
+      description: "IAM policies should not use wildcard actions"
+      condition: |
+        $.Policies.all(
+          @.PolicyDocument.Statement.all(
+            $not($contains(@.Action, '*'))
+          )
+        )
+      message: "IAM role contains wildcard actions"
+      severity: critical
+    
+    - name: max-session-duration
+      description: "IAM roles should have limited session duration"
+      condition: "$.MaxSessionDuration <= 3600"
+      message: "IAM role session duration exceeds 1 hour"
+      severity: medium
+    
+    - name: use-least-privilege
+      description: "IAM policies should follow least privilege principle"
+      condition: "$.Policies.length > 0"
+      message: "IAM role has no policies attached"
+      severity: medium
+      remediation:
+        type: manual
+        instructions: "Review and attach appropriate policies following least privilege"
