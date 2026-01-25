@@ -1,0 +1,133 @@
+governance-examples/policies/s3-security.yaml
+
+```yaml
+apiVersion: governance/v1.1.0
+kind: Policy
+metadata:
+  name: s3-security-baseline
+  version: 2.0.0
+  description: "Security baseline requirements for AWS S3 buckets"
+  severity: high
+  tags:
+    service: aws
+    resource: s3
+    category: security
+  compliance:
+    - CIS-AWS-1.4
+    - NIST-800-53
+    - GDPR
+    - PCI-DSS
+  createdAt: "2024-01-15T00:00:00Z"
+  updatedAt: "2024-01-20T00:00:00Z"
+
+spec:
+  target:
+    resourceType: aws_s3_bucket
+    resourceGroup: "*"
+    conditions:
+      - type: tag
+        key: environment
+        operator: equals
+        value: production
+  
+  enforcement: enforce
+  
+  rules:
+    - name: require-encryption
+      description: "S3 buckets must have encryption enabled"
+      condition: "$.ServerSideEncryptionConfiguration != null"
+      message: "S3 bucket does not have encryption enabled"
+      severity: critical
+      remediation:
+        type: terraform
+        template: |
+          resource "aws_s3_bucket_server_side_encryption_configuration" "example" {
+            bucket = aws_s3_bucket.example.bucket
+          
+            rule {
+              apply_server_side_encryption_by_default {
+                sse_algorithm = "AES256"
+              }
+            }
+          }
+    
+    - name: block-public-access
+      description: "S3 buckets must block public access"
+      condition: "$.PublicAccessBlockConfiguration != null"
+      message: "S3 bucket does not block public access"
+      severity: high
+      remediation:
+        type: terraform
+        template: |
+          resource "aws_s3_bucket_public_access_block" "example" {
+            bucket = aws_s3_bucket.example.id
+          
+            block_public_acls       = true
+            block_public_policy     = true
+            ignore_public_acls      = true
+            restrict_public_buckets = true
+          }
+    
+    - name: enable-versioning
+      description: "S3 buckets must have versioning enabled"
+      condition: "$.Versioning.Status == 'Enabled'"
+      message: "S3 bucket does not have versioning enabled"
+      severity: medium
+      remediation:
+        type: terraform
+        template: |
+          resource "aws_s3_bucket_versioning" "example" {
+            bucket = aws_s3_bucket.example.id
+            versioning_configuration {
+              status = "Enabled"
+            }
+          }
+    
+    - name: require-logging
+      description: "S3 buckets must have logging enabled"
+      condition: "$.LoggingConfiguration != null"
+      message: "S3 bucket does not have logging enabled"
+      severity: medium
+      remediation:
+        type: terraform
+        instructions: "Configure S3 bucket logging to a central logging bucket"
+    
+    - name: enforce-tagging
+      description: "S3 buckets must have required tags"
+      condition: |
+        $.Tags.all(
+          $containsKey(@, 'environment') &&
+          $containsKey(@, 'owner') &&
+          $containsKey(@, 'cost-center')
+        )
+      message: "S3 bucket missing required tags"
+      severity: low
+      remediation:
+        type: manual
+        instructions: |
+          Add the following tags to the S3 bucket:
+          - environment: production, staging, or development
+          - owner: team or individual responsible
+          - cost-center: accounting cost center
+  
+  parameters:
+    allowedEncryptionAlgorithms:
+      type: array
+      default: ["AES256", "aws:kms"]
+      description: "Allowed encryption algorithms"
+    
+    minimumTLSVersion:
+      type: string
+      default: "TLSv1.2"
+      description: "Minimum TLS version for bucket policies"
+  
+  exceptions:
+    - name: public-buckets-for-cdn
+      description: "Allow public access for CDN buckets"
+      conditions:
+        - type: tag
+          key: purpose
+          operator: equals
+          value: cdn
+      rules:
+        - block-public-access
